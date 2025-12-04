@@ -1,0 +1,105 @@
+// ---------------- BLYNK SETUP ----------------
+#define BLYNK_TEMPLATE_ID "TMPL3ZVcFqLK2"
+#define BLYNK_TEMPLATE_NAME "Patient Health Monitor System"
+#define BLYNK_AUTH_TOKEN "fKpVPQeO5B6DHK35lWduJk8ViPGY1Mur"
+
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <BlynkSimpleEsp32.h>
+
+char ssid[] = "OnePlus 12R";      // Change this
+char pass[] = "12344321"; 
+
+// ---------------- DS18B20 SETUP ----------------
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#define ONE_WIRE_BUS 15
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature bodyTemp(&oneWire);
+
+// ---------------- DHT11 SETUP -------------------
+#include <DHT.h>
+#define DHTPIN 4
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+// ---------------- HW-827 HEART SENSOR -----------
+#define PULSE_PIN 35
+int sensorValue = 0;
+unsigned long lastBeatTime = 0;
+int BPM = 0;
+bool beatDetected = false;
+
+BlynkTimer timer;
+
+
+// ---------------- SEND DATA TO BLYNK -----------
+void sendData()
+{
+  // ----- DS18B20 -----
+  bodyTemp.requestTemperatures();
+  float bodyC = bodyTemp.getTempCByIndex(0);
+  float bodyF = bodyTemp.toFahrenheit(bodyC);
+
+  Serial.print("DS18B20 Body Temp: ");
+  Serial.print(bodyC);
+  Serial.print(" °C   ");
+  Serial.print(bodyF);
+  Serial.println(" °F");
+
+  Blynk.virtualWrite(V1, bodyC);   // Body Temp °C
+  Blynk.virtualWrite(V2, bodyF);   // Body Temp °F
+
+  // ----- DHT11 -----
+  float roomTemp = dht.readTemperature();
+  float hum = dht.readHumidity();
+
+  Serial.print("DHT11 Temp: ");
+  Serial.print(roomTemp);
+  Serial.print(" °C   Humidity: ");
+  Serial.print(hum);
+  Serial.println(" %");
+
+  Blynk.virtualWrite(V3, roomTemp);  // Room Temp
+  Blynk.virtualWrite(V4, hum);       // Humidity
+
+  // ----- HW-827 -----
+  sensorValue = analogRead(PULSE_PIN);
+
+  if (sensorValue > 2000 && !beatDetected) {
+    beatDetected = true;
+
+    unsigned long now = millis();
+    BPM = 60000 / (now - lastBeatTime);
+    lastBeatTime = now;
+
+    Serial.print("BPM: ");
+    Serial.println(BPM);
+
+    Blynk.virtualWrite(V5, BPM);  // Heart Rate
+  }
+
+  if (sensorValue < 1500) {
+    beatDetected = false;
+  }
+
+  Serial.println("-------------------------------------");
+}
+
+void setup()
+{
+  Serial.begin(115200);
+
+  bodyTemp.begin();
+  dht.begin();
+
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
+  timer.setInterval(1500L, sendData);
+}
+
+void loop()
+{
+  Blynk.run();
+  timer.run();
+}
